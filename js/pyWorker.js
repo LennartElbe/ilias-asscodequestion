@@ -20,6 +20,7 @@
 if ('function' === typeof importScripts) {
     importScripts('./skulpt/skulpt.min.js');
     importScripts('./skulpt/skulpt-stdlib.js');
+    importScripts('./jquery.min.js');
 }
 
 
@@ -52,7 +53,7 @@ var maxLineLength = 256;
  * The timeout is given in milliseconds (ms)
  * @type {number} Timeout must be an integer to compare with Date.now()
  */
-var maxMS    = 1000;
+var maxMS = 1000;
 /**
  * The standard output of the program. The output is collected into an array of strings.
  * The number of entries in the array corresponds to the max. number of lines allowed
@@ -82,7 +83,7 @@ var start = Date.now();
  */
 var builtinRead = function(x) {
     if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
-            throw "File not found: '" + x + "'";
+        throw "File not found: '" + x + "'";
     return Sk.builtinFiles["files"][x];
 }
 
@@ -95,17 +96,17 @@ var builtinRead = function(x) {
 self.onmessage = function(e) {
     // check if this is the message we are waiting for
     if (e.data[0] === 'b8e493ca02970aeb0ef734555526bf9b') {
-        pyProg   = e.data[1].pyProg;
+        pyProg = e.data[1].pyProg;
         maxLines = e.data[1].maxLines;
-        pyInp    = e.data[1].pyInp;
-        maxMS    = e.data[1].maxMS;
+        pyInp = e.data[1].pyInp;
+        maxMS = e.data[1].maxMS;
 
         // if the program was passed to the worker
         // run Python with skulpt
         if (pyProg.length > 0) {
             // process more the maxLines lines of output
             // keep the first maxLines
-            var outf = function(text) { 
+            var outf = function(text) {
                 //if (pyOut.split(/\r\n|\r|\n/).length <= maxLines) {
                 //     pyOut += text; 
                 // };
@@ -122,29 +123,46 @@ self.onmessage = function(e) {
                     pyOut.shift();
                 }
             }
-            Sk.configure({output:outf, read:builtinRead}); 
-            var myPromise = Sk.misceval.asyncToPromise(function() {
-                return Sk.importMainWithBody('<stdin>', false, pyProg, true);
+
+            var myPromise = jQuery.ajax({
+                url: "http://192.52.34.132/computeOnServer.php?callback=cb",
+                jsonp: "callback",
+                dataType: "jsonp",
+                data: {
+                    code: pyProg
+                },
+                method: "POST",
+                success: function(data) {
+                    console.log(data); // server response
+                    editor2.insert(data['output'].join("\n") + '\n');
+                    editor2.insert(data['outputtest'].join("\n") + '\n');
+                }
             });
-            
+
+            //Sk.configure({output:outf, read:builtinRead}); 
+            //var myPromise = Sk.misceval.asyncToPromise(function() {
+            //    return Sk.importMainWithBody('<stdin>', false, pyProg, true);
+            //});
+
             myPromise.then(function(mod) {
                     // construct data message and send it to main thrad
                     //var messageData = {finished: 'success', stdOut: pyOut};
-                    if (pyOut.length >= maxLines) { 
+                    var pyOut = mod.output;
+                    if (pyOut.length >= maxLines) {
                         pyOut.unshift('last ' + maxLines + ' lines of standard output\n');
                     }
-                    pyOut.forEach( function(s,index) {
+                    pyOut.forEach(function(s, index) {
                         if (s.length > maxLineLength) {
-                            pyOut[index] = s.substring(0,maxLineLength) + '\n';
+                            pyOut[index] = s.substring(0, maxLineLength) + '\n';
                         }
                     });
-                    var messageData = {finished: 'success', stdOut: pyOut.join('')};
-                    postMessage(['finished',messageData]);
+                    var messageData = { finished: 'success', stdOut: pyOut.join('') };
+                    postMessage(['finished', messageData]);
                 },
                 function(err) {
                     // there were some error
-                    postMessage(['err',err.toString()]);
-            });
+                    postMessage(['err', err.toString()]);
+                });
         }
     }
 }
